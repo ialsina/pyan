@@ -4,6 +4,7 @@
 
 import ast
 import os.path
+from typing import Optional
 
 from .node import Flavor
 
@@ -20,7 +21,7 @@ def tail(lst):
         return []
 
 
-def get_module_name(filename, root: str = None):
+def get_module_name(filename, root: Optional[str] = None):
     """Try to determine the full module name of a source file, by figuring out
     if its directory looks like a package (i.e. has an __init__.py file or
     there is a .py file in it )."""

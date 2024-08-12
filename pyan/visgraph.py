@@ -121,6 +121,8 @@ class VisualGraph(object):
 
     @classmethod
     def from_visitor(cls, visitor, options=None, logger=None):
+        if options is None:
+            options = {}
         colored = options.get("colored", False)
         nested = options.get("nested_groups", False)
         grouped_alt = options.get("grouped_alt", False)

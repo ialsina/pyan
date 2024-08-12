@@ -5,7 +5,7 @@
 import ast
 import logging
 import symtable
-from typing import Union
+from typing import Union, Optional
 
 from .anutils import (
     ExecuteInInnerScope,
@@ -51,7 +51,7 @@ class CallGraphVisitor(ast.NodeVisitor):
     all files.  This way use information between objects in different files
     can be gathered."""
 
-    def __init__(self, filenames, root: str = None, logger=None):
+    def __init__(self, filenames, root: Optional[str] = None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
 
         # full module names for all given files
