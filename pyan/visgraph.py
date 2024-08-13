@@ -3,8 +3,9 @@
 """Format-agnostic representation of the output graph."""
 
 import colorsys
-import logging
 import re
+
+from .log import logger
 
 
 class Colorizer:
@@ -19,8 +20,7 @@ class Colorizer:
     of the hue.
     """
 
-    def __init__(self, num_colors, colored=True, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
+    def __init__(self, num_colors, colored=True):
         self.colored = colored
 
         self._hues = [j / num_colors for j in range(num_colors)]
@@ -31,13 +31,13 @@ class Colorizer:
         result = self._idx
         self._idx += 1
         if self._idx >= len(self._hues):
-            self.logger.warn("WARNING: colors wrapped")
+            logger.warn("WARNING: colors wrapped")
             self._idx = 0
         return result
 
     def _node_to_idx(self, node):
         ns = node.filename
-        self.logger.info("Coloring %s from file '%s'" % (node.get_short_name(), ns))
+        logger.info("Coloring %s from file '%s'" % (node.get_short_name(), ns))
         if ns not in self._idx_of:
             self._idx_of[ns] = self._next_idx()
         return self._idx_of[ns]
@@ -120,7 +120,7 @@ class VisualGraph(object):
         self.grouped = grouped
 
     @classmethod
-    def from_visitor(cls, visitor, options=None, logger=None):
+    def from_visitor(cls, visitor, options=None):
         if options is None:
             options = {}
         colored = options.get("colored", False)
@@ -154,8 +154,6 @@ class VisualGraph(object):
             def labeler(n):
                 return n.get_short_name()
 
-        logger = logger or logging.getLogger(__name__)
-
         # collect and sort defined nodes
         visited_nodes = []
         for name in visitor.nodes:
@@ -170,7 +168,7 @@ class VisualGraph(object):
                 filenames.add(node.filename)
             return filenames
 
-        colorizer = Colorizer(num_colors=len(find_filenames()) + 1, colored=colored, logger=logger)
+        colorizer = Colorizer(num_colors=len(find_filenames()) + 1, colored=colored)
 
         nodes_dict = dict()
         root_graph = cls("G", label="", grouped=grouped)

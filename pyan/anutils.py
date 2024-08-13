@@ -7,6 +7,7 @@ import os.path
 from typing import Optional
 
 from .node import Flavor
+from .log import logger
 
 
 def head(lst):
@@ -282,5 +283,5 @@ class ExecuteInInnerScope:
         ns = from_node.get_name()
         to_node = analyzer.get_node(ns, scopename, None, flavor=Flavor.NAMESPACE)
         if analyzer.add_defines_edge(from_node, to_node):
-            analyzer.logger.info("Def from %s to %s %s" % (from_node, scopename, to_node))
+            logger.info("Def from %s to %s %s" % (from_node, scopename, to_node))
         analyzer.last_value = to_node  # Make this inner scope node assignable to track its uses.

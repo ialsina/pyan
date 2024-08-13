@@ -1,5 +1,4 @@
 from glob import glob
-import logging
 import os
 
 import pytest
@@ -10,7 +9,7 @@ from pyan.analyzer import CallGraphVisitor
 @pytest.fixture
 def callgraph():
     filenames = glob(os.path.join(os.path.dirname(__file__), "test_code/**/*.py"), recursive=True)
-    v = CallGraphVisitor(filenames, logger=logging.getLogger())
+    v = CallGraphVisitor(filenames)
     return v
 
 
@@ -58,7 +57,7 @@ def test_resolve_package_without___init__(callgraph):
 def test_resolve_package_with_known_root():
     dirname = os.path.dirname(__file__)
     filenames = glob(os.path.join(dirname, "test_code/**/*.py"), recursive=True)
-    callgraph = CallGraphVisitor(filenames, logger=logging.getLogger(), root=dirname)
+    callgraph = CallGraphVisitor(filenames)
     dirname_base = os.path.basename(dirname)
     defines = get_in_dict(callgraph.defines_edges, f"{dirname_base}.test_code.subpackage2.submodule_hidden1")
     get_node(defines, f"{dirname_base}.test_code.subpackage2.submodule_hidden1.test_func1")

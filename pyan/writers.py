@@ -4,24 +4,21 @@
 """Graph markup writers."""
 
 import io
-import logging
 import os
 import subprocess
 import sys
 
 from jinja2 import Template
+from .log import logger
+
 
 
 class Writer(object):
-    def __init__(self, graph, output=None, logger=None, tabstop=4):
+    def __init__(self, graph, output=None, tabstop=4):
         self.graph = graph
         self.output = output
-        self.logger = logger or logging.getLogger(__name__)
         self.indent_level = 0
         self.tabstop = tabstop * " "
-
-    def log(self, msg):
-        self.logger.info(msg)
 
     def indent(self, level=1):
         self.indent_level += level
@@ -33,7 +30,7 @@ class Writer(object):
         self.outstream.write(self.tabstop * self.indent_level + line + "\n")
 
     def run(self):
-        self.log("%s running" % type(self))
+        logger.info("%s running" % type(self))
         try:
             if isinstance(self.output, io.StringIO):  # write to stream
                 self.outstream = self.output
@@ -88,8 +85,8 @@ class Writer(object):
 
 
 class TgfWriter(Writer):
-    def __init__(self, graph, output=None, logger=None):
-        Writer.__init__(self, graph, output=output, logger=logger)
+    def __init__(self, graph, output=None):
+        Writer.__init__(self, graph, output=output)
         self.i = 1
         self.id_map = {}
 
@@ -107,8 +104,8 @@ class TgfWriter(Writer):
 
 
 class DotWriter(Writer):
-    def __init__(self, graph, options=None, output=None, logger=None, tabstop=4):
-        Writer.__init__(self, graph, output=output, logger=logger, tabstop=tabstop)
+    def __init__(self, graph, options=None, output=None, tabstop=4):
+        Writer.__init__(self, graph, output=output, tabstop=tabstop)
         options = options or []
         if graph.grouped:
             options += ['clusterrank="local"']
@@ -121,7 +118,7 @@ class DotWriter(Writer):
         self.indent()
 
     def start_subgraph(self, graph):
-        self.log("Start subgraph %s" % graph.label)
+        logger.info("Start subgraph %s" % graph.label)
         # Name must begin with "cluster" to be recognized as a cluster by GraphViz.
         self.write("subgraph cluster_%s {\n" % graph.id)
         self.indent()
@@ -131,13 +128,13 @@ class DotWriter(Writer):
         self.write('graph [style="filled,rounded", fillcolor="#80808018", label="%s"];' % graph.label)
 
     def finish_subgraph(self, graph):
-        self.log("Finish subgraph %s" % graph.label)
+        logger.info("Finish subgraph %s" % graph.label)
         # terminate previous subgraph
         self.dedent()
         self.write("}")
 
     def write_node(self, node):
-        self.log("Write node %s" % node.label)
+        logger.info("Write node %s" % node.label)
         self.write(
             '%s [label="%s", style="filled", fillcolor="%s",'
             ' fontcolor="%s", group="%s"];' % (node.id, node.label, node.fill_color, node.text_color, node.group)
@@ -159,7 +156,7 @@ class DotWriter(Writer):
 class SVGWriter(DotWriter):
     def run(self):
         # write dot file
-        self.log("%s running" % type(self))
+        logger.info("%s running" % type(self))
         self.outstream = io.StringIO()
         self.start_graph()
         self.write_subgraph(self.graph)
@@ -207,8 +204,8 @@ class HTMLWriter(SVGWriter):
 
 
 class YedWriter(Writer):
-    def __init__(self, graph, output=None, logger=None, tabstop=2):
-        Writer.__init__(self, graph, output=output, logger=logger, tabstop=tabstop)
+    def __init__(self, graph, output=None, tabstop=2):
+        Writer.__init__(self, graph, output=output, tabstop=tabstop)
         self.grouped = graph.grouped
         self.indent_level = 0
         self.edge_id = 0
@@ -236,7 +233,7 @@ class YedWriter(Writer):
         self.indent()
 
     def start_subgraph(self, graph):
-        self.log("Start subgraph %s" % graph.label)
+        logger.info("Start subgraph %s" % graph.label)
 
         self.write('<node id="%s:" yfiles.foldertype="group">' % graph.id)
         self.indent()
@@ -265,14 +262,14 @@ class YedWriter(Writer):
         self.indent()
 
     def finish_subgraph(self, graph):
-        self.log("Finish subgraph %s" % graph.label)
+        logger.info("Finish subgraph %s" % graph.label)
         self.dedent()
         self.write("</graph>")
         self.dedent()
         self.write("</node>")
 
     def write_node(self, node):
-        self.log("Write node %s" % node.label)
+        logger.info("Write node %s" % node.label)
         width = 20 + 10 * len(node.label)
         self.write('<node id="%s">' % node.id)
         self.indent()

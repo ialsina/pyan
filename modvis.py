@@ -4,13 +4,13 @@
 
 import ast
 from glob import glob
-import logging
 from optparse import OptionParser  # TODO: migrate to argparse
 import os
 
 import pyan.node
 import pyan.visgraph
 import pyan.writers
+from pyan.log import logger, setup_logging
 
 # from pyan.anutils import get_module_name
 
@@ -81,10 +81,9 @@ def resolve(current_module, target_module, level):
 
 
 class ImportVisitor(ast.NodeVisitor):
-    def __init__(self, filenames, logger):
+    def __init__(self, filenames):
         self.modules = {}  # modname: {dep0, dep1, ...}
         self.fullpaths = {}  # modname: fullpath
-        self.logger = logger
         self.analyze(filenames)
 
     def analyze(self, filenames):
@@ -118,10 +117,10 @@ class ImportVisitor(ast.NodeVisitor):
             possible_init = base + ".__init__"
             if possible_init != m:  # will happen when current_module is somepackage.__init__ itself
                 self.modules[m].add(possible_init)
-                self.logger.debug("    added possible implicit use of '{}'".format(possible_init))
+                logger.debug("    added possible implicit use of '{}'".format(possible_init))
 
     def visit_Import(self, node):
-        self.logger.debug(
+        logger.debug(
             "{}:{}: Import {}".format(self.current_module, node.lineno, [alias.name for alias in node.names])
         )
         for alias in node.names:
@@ -130,27 +129,27 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         # from foo import some_symbol
         if node.module:
-            self.logger.debug(
+            logger.debug(
                 "{}:{}: ImportFrom '{}', relative import level {}".format(
                     self.current_module, node.lineno, node.module, node.level
                 )
             )
             absname = resolve(self.current_module, node.module, node.level)
             if node.level > 0:
-                self.logger.debug("    resolved relative import to '{}'".format(absname))
+                logger.debug("    resolved relative import to '{}'".format(absname))
             self.add_dependency(absname)
 
         # from . import foo  -->  module = None; now the **names** refer to modules
         else:
             for alias in node.names:
-                self.logger.debug(
+                logger.debug(
                     "{}:{}: ImportFrom '{}', target module '{}', relative import level {}".format(
                         self.current_module, node.lineno, "." * node.level, alias.name, node.level
                     )
                 )
                 absname = resolve(self.current_module, alias.name, node.level)
                 if node.level > 0:
-                    self.logger.debug("    resolved relative import to '{}'".format(absname))
+                    logger.debug("    resolved relative import to '{}'".format(absname))
                 self.add_dependency(absname)
 
     # --------------------------------------------------------------------------------
@@ -316,21 +315,11 @@ def main():
         "annotated": options.annotated,
     }
 
-    # TODO: use an int argument for verbosity
-    logger = logging.getLogger(__name__)
-    if options.very_verbose:
-        logger.setLevel(logging.DEBUG)
-    elif options.verbose:
-        logger.setLevel(logging.INFO)
-    else:
-        logger.setLevel(logging.WARN)
-    logger.addHandler(logging.StreamHandler())
-    if options.logname:
-        handler = logging.FileHandler(options.logname)
-        logger.addHandler(handler)
+
+    setup_logging(verbose=options.verbose, very_verbose=options.very_verbose, file=options.logname)
 
     # run the analysis
-    v = ImportVisitor(filenames, logger)
+    v = ImportVisitor(filenames)
 
     # Postprocessing: detect import cycles
     #
@@ -403,16 +392,16 @@ def main():
     if make_graph:
         v.prepare_graph()
         # print(v.nodes, v.uses_edges)
-        graph = pyan.visgraph.VisualGraph.from_visitor(v, options=graph_options, logger=logger)
+        graph = pyan.visgraph.VisualGraph.from_visitor(v, options=graph_options)
 
     if options.dot:
         writer = pyan.writers.DotWriter(
-            graph, options=["rankdir=" + options.rankdir], output=options.filename, logger=logger
+            graph, options=["rankdir=" + options.rankdir], output=options.filename
         )
     if options.tgf:
-        writer = pyan.writers.TgfWriter(graph, output=options.filename, logger=logger)
+        writer = pyan.writers.TgfWriter(graph, output=options.filename)
     if options.yed:
-        writer = pyan.writers.YedWriter(graph, output=options.filename, logger=logger)
+        writer = pyan.writers.YedWriter(graph, output=options.filename)
     if make_graph:
         writer.run()
 

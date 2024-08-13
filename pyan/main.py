@@ -11,12 +11,12 @@
 
 from argparse import ArgumentParser
 from glob import glob
-import logging
 import os
 
 from .analyzer import CallGraphVisitor
 from .visgraph import VisualGraph
 from .writers import DotWriter, HTMLWriter, SVGWriter, TgfWriter, YedWriter
+from .log import setup_logging, logger
 
 
 def main(cli_args=None):
@@ -185,25 +185,9 @@ def main(cli_args=None):
         "annotated": known_args.annotated,
     }
 
-    # TODO: use an int argument for verbosity
-    logger = logging.getLogger(__name__)
+    setup_logging(verbose=known_args.verbose, very_verbose=known_args.very_verbose, file=known_args.logname)
 
-    if known_args.very_verbose:
-        logger.setLevel(logging.DEBUG)
-
-    elif known_args.verbose:
-        logger.setLevel(logging.INFO)
-
-    else:
-        logger.setLevel(logging.WARN)
-
-    logger.addHandler(logging.StreamHandler())
-
-    if known_args.logname:
-        handler = logging.FileHandler(known_args.logname)
-        logger.addHandler(handler)
-
-    v = CallGraphVisitor(filenames, logger=logger, root=root)
+    v = CallGraphVisitor(filenames, root=root)
 
     if known_args.function or known_args.namespace:
 
@@ -217,24 +201,24 @@ def main(cli_args=None):
 
         v.filter(node=node, namespace=known_args.namespace)
 
-    graph = VisualGraph.from_visitor(v, options=graph_options, logger=logger)
+    graph = VisualGraph.from_visitor(v, options=graph_options)
 
     writer = None
 
     if known_args.dot:
-        writer = DotWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename, logger=logger)
+        writer = DotWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
 
     if known_args.html:
-        writer = HTMLWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename, logger=logger)
+        writer = HTMLWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
 
     if known_args.svg:
-        writer = SVGWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename, logger=logger)
+        writer = SVGWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
 
     if known_args.tgf:
-        writer = TgfWriter(graph, output=known_args.filename, logger=logger)
+        writer = TgfWriter(graph, output=known_args.filename)
 
     if known_args.yed:
-        writer = YedWriter(graph, output=known_args.filename, logger=logger)
+        writer = YedWriter(graph, output=known_args.filename)
 
     if writer:
         writer.run()
