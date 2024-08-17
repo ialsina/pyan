@@ -52,12 +52,8 @@ class CallGraphVisitor(ast.NodeVisitor):
     can be gathered."""
 
     def __init__(self, filenames, root: Optional[str] = None):
-        #
-        # full module names for all given files
-        self.module_to_filename = {}  # inverse mapping for recording which file each AST node came from
-        for filename in filenames:
-            mod_name = get_module_name(filename, root=root)
-            self.module_to_filename[mod_name] = filename
+
+        self.module_to_filename = {}  # Inverse mapping to record which file each AST node came from
         self.filenames = filenames
         self.root = root
 
@@ -80,17 +76,27 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.context_stack = []  # for detecting which FunctionDefs are methods
         self.last_value = None
 
-        # Analyze.
+        # Analyze
         self.process()
+
+    def preprocess(self):
+        """Find the module names for each of the filenames."""
+
+        for filename in self.filenames:
+            mod_name = get_module_name(filename, root=self.root)
+            self.module_to_filename[mod_name] = filename
 
     def process(self):
         """Analyze the set of files, twice so that any forward-references are picked up."""
-        for pas in range(2):
-            for filename in self.filenames:
-                logger.info("========== pass %d, file '%s' ==========" % (pas + 1, filename))
-                self.process_one(filename)
-            if pas == 0:
-                self.resolve_base_classes()  # must be done only after all files seen
+
+        self.preprocess()
+        for filename in self.filenames:
+            logger.info("========== Preprocess pass 1, file %s ==========" % (filename,))
+            self.process_one(filename)
+        self.resolve_base_classes()  # must be done only after all files seen
+        for filename in self.filenames:
+            logger.info("========== Preprocess pass 2, file %s ==========" % (filename,))
+            self.process_one(filename)
         self.postprocess()
 
     def process_one(self, filename):
