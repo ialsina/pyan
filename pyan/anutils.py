@@ -22,6 +22,37 @@ def tail(lst):
         return []
 
 
+# TODO: Test and benchmark both variants
+
+def recursive_scope_v1(parent_scope_name, table):
+    scopes = {}
+    scope = Scope(table)
+    scope_name = (
+        f"{parent_scope_name:s}.{scope.name:s}"
+        if len(scope.name)
+        else parent_scope_name
+    )
+    scopes[scope_name] = scope
+    for child_table in table.get_children():
+        scopes.update(
+            **recursive_scope_v1(scope_name, child_table)
+        )
+    return scopes
+
+def recursive_scope_v2(parent_scope_name, table, scopes=None):
+    if scopes is None:
+        scopes = {}
+    scope = Scope(table)
+    scope_name = (
+        f"{parent_scope_name:s}.{scope.name:s}"
+        if len(scope.name)
+        else parent_scope_name
+    )
+    scopes[scope_name] = scope
+    for child_table in table.get_children():
+        recursive_scope_v2(scope_name, child_table, scopes)
+    return scopes
+
 def get_module_name(filename, root: Optional[str] = None):
     """Try to determine the full module name of a source file, by figuring out
     if its directory looks like a package (i.e. has an __init__.py file or

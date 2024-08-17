@@ -4,7 +4,7 @@
 
 import ast
 import symtable
-from typing import Union, Optional
+from typing import Optional, Sequence, Union
 
 from .anutils import (
     ExecuteInInnerScope,
@@ -16,6 +16,8 @@ from .anutils import (
     resolve_method_resolution_order,
     sanitize_exprs,
     tail,
+    recursive_scope_v1,
+    recursive_scope_v2,
 )
 from .node import Flavor, Node
 from .log import logger
@@ -51,7 +53,7 @@ class CallGraphVisitor(ast.NodeVisitor):
     all files.  This way use information between objects in different files
     can be gathered."""
 
-    def __init__(self, filenames, root: Optional[str] = None):
+    def __init__(self, filenames: Sequence[str], root: Optional[str] = None):
 
         self.module_to_filename = {}  # Inverse mapping to record which file each AST node came from
         self.filenames = filenames
@@ -68,8 +70,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.mro = {}  # pass 2: class Node: list of Node objects in Python's MRO order
 
         # current context for analysis
-        self.module_name = None
-        self.filename = None
+        self.module_name: str | None = None
+        self.filename: str | None = None
         self.name_stack = []  # for building namespace name, node naming
         self.scope_stack = []  # the Scope objects currently in scope
         self.class_stack = []  # Nodes for class definitions currently in scope
@@ -99,21 +101,25 @@ class CallGraphVisitor(ast.NodeVisitor):
             self.process_one(filename)
         self.postprocess()
 
-    def process_one(self, filename):
+    def process_one(self, filename: str):
         """Analyze the specified Python source file."""
+
         if filename not in self.filenames:
+            # TODO: Clearer message.
             raise ValueError(
-                "Filename '%s' has not been preprocessed (was not given to __init__, which got %s)"
-                % (filename, self.filenames)
+                f"Filename {filename} has not been preprocessed "
+                f"(was not given to __init__, which got {self.filenames})."
             )
+
         with open(filename, "rt", encoding="utf-8") as f:
             content = f.read()
+
         self.filename = filename
         self.module_name = get_module_name(filename, root=self.root)
         self.analyze_scopes(content, filename)  # add to the currently known scopes
         self.visit(ast.parse(content, filename))
-        self.module_name = None
         self.filename = None
+        self.module_name = None
 
     def resolve_base_classes(self):
         """Resolve base classes from AST nodes to Nodes.
@@ -294,9 +300,9 @@ class CallGraphVisitor(ast.NodeVisitor):
                 new_nodes = {n for items in self.nodes.values() for n in items}
             else:
                 new_nodes = {
-                    n
+                    node
                     for items in self.nodes.values()
-                    for n in items
+                    for node in items
                     if n.namespace is not None and namespace in n.namespace
                 }
 
@@ -341,10 +347,10 @@ class CallGraphVisitor(ast.NodeVisitor):
         module_node = self.get_node("", self.module_name, node, flavor=Flavor.MODULE)
         self.associate_node(module_node, node, filename=self.filename)
 
-        ns = self.module_name
-        self.name_stack.append(ns)
-        self.scope_stack.append(self.scopes[ns])
-        self.context_stack.append("Module %s" % (ns))
+        namespace = self.module_name
+        self.name_stack.append(namespace)
+        self.scope_stack.append(self.scopes[namespace])
+        self.context_stack.append("Module %s" % (namespace))
         self.generic_visit(node)  # visit the **children** of node
         self.context_stack.pop()
         self.scope_stack.pop()
@@ -358,8 +364,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         logger.debug("ClassDef %s, %s:%s" % (node.name, self.filename, node.lineno))
 
         from_node = self.get_node_of_current_namespace()
-        ns = from_node.get_name()
-        to_node = self.get_node(ns, node.name, node, flavor=Flavor.CLASS)
+        namespace = from_node.get_name()
+        to_node = self.get_node(namespace, node.name, node, flavor=Flavor.CLASS)
         if self.add_defines_edge(from_node, to_node):
             logger.info("Def from %s to Class %s" % (from_node, to_node))
 
@@ -379,8 +385,8 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         self.class_stack.append(to_node)
         self.name_stack.append(node.name)
-        inner_ns = self.get_node_of_current_namespace().get_name()
-        self.scope_stack.append(self.scopes[inner_ns])
+        inner_namespace = self.get_node_of_current_namespace().get_name()
+        self.scope_stack.append(self.scopes[inner_namespace])
         self.context_stack.append("ClassDef %s" % (node.name))
 
         self.class_base_ast_nodes[to_node] = []
@@ -418,8 +424,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         # Now we can create the Node.
         #
         from_node = self.get_node_of_current_namespace()
-        ns = from_node.get_name()
-        to_node = self.get_node(ns, node.name, node, flavor=flavor)
+        namespace = from_node.get_name()
+        to_node = self.get_node(namespace, node.name, node, flavor=flavor)
         if self.add_defines_edge(from_node, to_node):
             logger.info("Def from %s to Function %s" % (from_node, to_node))
 
@@ -431,13 +437,13 @@ class CallGraphVisitor(ast.NodeVisitor):
         # Enter the function scope
         #
         self.name_stack.append(node.name)
-        inner_ns = self.get_node_of_current_namespace().get_name()
-        self.scope_stack.append(self.scopes[inner_ns])
+        inner_namespace = self.get_node_of_current_namespace().get_name()
+        self.scope_stack.append(self.scopes[inner_namespace])
         self.context_stack.append("FunctionDef %s" % (node.name))
 
         # Capture which names correspond to function args.
         #
-        self.generate_args_nodes(node.args, inner_ns)
+        self.generate_args_nodes(node.args, inner_namespace)
 
         # self_name is just an ordinary name in the method namespace, except
         # that its value is implicitly set by Python when the method is called.
@@ -450,7 +456,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         #
         if self_name is not None:
             class_node = self.get_current_class()
-            self.scopes[inner_ns].defs[self_name] = class_node
+            self.scopes[inner_namespace].defs[self_name] = class_node
             logger.info('Method def: setting self name "%s" to %s' % (self_name, class_node))
 
         # record bindings of args to the given default values, if present
@@ -475,12 +481,12 @@ class CallGraphVisitor(ast.NodeVisitor):
         # TODO: avoid lumping together all lambdas in the same namespace.
         logger.debug("Lambda, %s:%s" % (self.filename, node.lineno))
         with ExecuteInInnerScope(self, "lambda"):
-            inner_ns = self.get_node_of_current_namespace().get_name()
-            self.generate_args_nodes(node.args, inner_ns)
+            inner_namespace = self.get_node_of_current_namespace().get_name()
+            self.generate_args_nodes(node.args, inner_namespace)
             self.analyze_arguments(node.args)
             self.visit(node.body)  # single expr
 
-    def generate_args_nodes(self, ast_args, inner_ns):
+    def generate_args_nodes(self, ast_args, inner_namespace):
         """Capture which names correspond to function args.
 
         In the function scope, set them to a nonsense Node,
@@ -489,23 +495,23 @@ class CallGraphVisitor(ast.NodeVisitor):
         until we set it to this nonsense Node).
 
         ast_args: node.args from a FunctionDef or Lambda
-        inner_ns: namespace of the function or lambda, for scope lookup
+        inner_namespace: namespace of the function or lambda, for scope lookup
         """
-        sc = self.scopes[inner_ns]
+        scope = self.scopes[inner_namespace]
         # As the name of the nonsense node, we can use any string that
         # is not a valid Python identifier.
         #
         # It has no sensible flavor, so we leave its flavor unspecified.
-        nonsense_node = self.get_node(inner_ns, "^^^argument^^^", None)
+        nonsense_node = self.get_node(inner_namespace, "^^^argument^^^", None)
         # args, vararg (*args), kwonlyargs, kwarg (**kwargs)
         for a in ast_args.args:  # positional
-            sc.defs[a.arg] = nonsense_node
+            scope.defs[a.arg] = nonsense_node
         if ast_args.vararg is not None:  # *args if present
-            sc.defs[ast_args.vararg] = nonsense_node
+            scope.defs[ast_args.vararg] = nonsense_node
         for a in ast_args.kwonlyargs:  # any after *args or *
-            sc.defs[a.arg] = nonsense_node
+            scope.defs[a.arg] = nonsense_node
         if ast_args.kwarg is not None:  # **kwargs if present
-            sc.defs[ast_args.kwarg] = nonsense_node
+            scope.defs[ast_args.kwarg] = nonsense_node
 
     def analyze_arguments(self, ast_args):
         """Analyze an arguments node of the AST.
@@ -632,9 +638,9 @@ class CallGraphVisitor(ast.NodeVisitor):
     def visit_Constant(self, node):
         logger.debug("Constant %s, %s:%s" % (node.value, self.filename, node.lineno))
         t = type(node.value)
-        ns = self.get_node_of_current_namespace().get_name()
+        namespace = self.get_node_of_current_namespace().get_name()
         tn = t.__name__
-        self.last_value = self.get_node(ns, tn, node, flavor=Flavor.ATTRIBUTE)
+        self.last_value = self.get_node(namespace, tn, node, flavor=Flavor.ATTRIBUTE)
 
     # attribute access (node.ctx determines whether set (ast.Store) or get (ast.Load))
     def visit_Attribute(self, node):
@@ -699,8 +705,8 @@ class CallGraphVisitor(ast.NodeVisitor):
             elif isinstance(obj_node, Node) and obj_node.namespace is not None:
                 tgt_name = node.attr
                 from_node = self.get_node_of_current_namespace()
-                ns = obj_node.get_name()  # fully qualified namespace **of attr**
-                to_node = self.get_node(ns, tgt_name, node, flavor=Flavor.ATTRIBUTE)
+                namespace = obj_node.get_name()  # fully qualified namespace **of attr**
+                to_node = self.get_node(namespace, tgt_name, node, flavor=Flavor.ATTRIBUTE)
                 logger.debug(
                     f"Use from {from_node} to {to_node} (target obj {obj_node} known but target attr "
                     f"{node.attr} not resolved; maybe fwd ref or unanalyzed import)"
@@ -1188,12 +1194,12 @@ class CallGraphVisitor(ast.NodeVisitor):
             obj_node, attr_name = self.resolve_attribute(ast_node.value)
 
             if isinstance(obj_node, Node) and obj_node.namespace is not None:
-                ns = obj_node.get_name()  # fully qualified namespace **of attr**
-                if ns in self.scopes:  # imported modules not in the set of analyzed files are not seen by Pyan
-                    sc = self.scopes[ns]
-                    if attr_name in sc.defs:
-                        logger.debug("Resolved to attr %s of %s" % (ast_node.attr, sc.defs[attr_name]))
-                        return sc.defs[attr_name], ast_node.attr
+                namespace = obj_node.get_name()  # fully qualified namespace **of attr**
+                if namespace in self.scopes:  # imported modules not in the set of analyzed files are not seen by Pyan
+                    scope = self.scopes[namespace]
+                    if attr_name in scope.defs:
+                        logger.debug("Resolved to attr %s of %s" % (ast_node.attr, scope.defs[attr_name]))
+                        return scope.defs[attr_name], ast_node.attr
 
             # It may happen that ast_node.value has no corresponding graph Node,
             # if this is a forward-reference, or a reference to a file
@@ -1235,11 +1241,11 @@ class CallGraphVisitor(ast.NodeVisitor):
                     logger.debug("Unresolved function call as obj, returning attr %s of unknown" % (ast_node.attr))
                     return None, ast_node.attr
             else:
-                # Get the Node object corresponding to node.value in the current ns.
+                # Get the Node object corresponding to node.value in the current namespace.
                 #
-                # (Using the current ns here is correct; this case only gets
+                # (Using the current namespace here is correct; this case only gets
                 #  triggered when there are no more levels of recursion,
-                #  and the leftmost name always resides in the current ns.)
+                #  and the leftmost name always resides in the current namespace.)
                 obj_node = self.get_value(get_ast_node_name(ast_node.value))  # resolves "self" if needed
 
         logger.debug("Resolved to attr %s of %s" % (ast_node.attr, obj_node))
@@ -1248,39 +1254,31 @@ class CallGraphVisitor(ast.NodeVisitor):
     ###########################################################################
     # Scope analysis
 
-    def analyze_scopes(self, code, filename):
+    def analyze_scopes(self, code: str, filename: str):
         """Gather lexical scope information."""
-
-        # Below, ns is the fully qualified ("dotted") name of sc.
-        #
+        # namespace is the fully qualified ("dotted") name of scope.
         # Technically, the module scope is anonymous, but we treat it as if
         # it was in a namespace named after the module, to support analysis
         # of several files as a set (keeping their module-level definitions
         # in different scopes, as we should).
-        #
-        scopes = {}
 
-        def process(parent_ns, table):
-            sc = Scope(table)
-            ns = "%s.%s" % (parent_ns, sc.name) if len(sc.name) else parent_ns
-            scopes[ns] = sc
-            for t in table.get_children():
-                process(ns, t)
-
-        process(self.module_name, symtable.symtable(code, filename, compile_type="exec"))
+        # TODO: Test and benchmark recursive_scope_v*
+        scopes = recursive_scope_v1(
+            self.module_name,
+            symtable.symtable(code, filename, compile_type="exec")
+        )
 
         # add to existing scopes (while not overwriting any existing definitions with None)
-        for ns in scopes:
-            if ns not in self.scopes:  # add new scope info
-                self.scopes[ns] = scopes[ns]
+        for namespace, scope in scopes.items():
+            if namespace not in self.scopes:  # add new scope info
+                self.scopes[namespace] = scopes[namespace]
             else:  # update existing scope info
-                sc = scopes[ns]
-                oldsc = self.scopes[ns]
-                for name in sc.defs:
-                    if name not in oldsc.defs:
-                        oldsc.defs[name] = sc.defs[name]
+                old_scope = self.scopes[namespace]
+                for name in scope.defs:
+                    if name not in old_scope.defs:
+                        old_scope.defs[name] = scope.defs[name]
 
-        logger.debug("Scopes now: %s" % (self.scopes))
+        logger.debug(f"Scopes now: {self.scopes}")
 
     def get_current_class(self):
         """Return the node representing the current class, or None if not inside a class definition."""
@@ -1311,20 +1309,20 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         # get the innermost scope that has name **and where name has a value**
         def find_scope(name):
-            for sc in reversed(self.scope_stack):
-                if name in sc.defs and sc.defs[name] is not None:
-                    return sc
+            for scope in reversed(self.scope_stack):
+                if name in scope.defs and scope.defs[name] is not None:
+                    return scope
 
-        sc = find_scope(name)
-        if sc is not None:
-            value = sc.defs[name]
+        scope = find_scope(name)
+        if scope is not None:
+            value = scope.defs[name]
             if isinstance(value, Node):
-                logger.info("Get %s in %s, found in %s, value %s" % (name, self.scope_stack[-1], sc, value))
+                logger.info("Get %s in %s, found in %s, value %s" % (name, self.scope_stack[-1], scope, value))
                 return value
             else:
                 # TODO: should always be a Node or None
                 logger.debug(
-                    "Get %s in %s, found in %s: value %s is not a Node" % (name, self.scope_stack[-1], sc, value)
+                    "Get %s in %s, found in %s: value %s is not a Node" % (name, self.scope_stack[-1], scope, value)
                 )
         else:
             logger.debug("Get %s in %s: no Node value (or name not in scope)" % (name, self.scope_stack[-1]))
@@ -1334,18 +1332,18 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         # get the innermost scope that has name (should be the current scope unless name is a global)
         def find_scope(name):
-            for sc in reversed(self.scope_stack):
-                if name in sc.defs:
-                    return sc
+            for scope in reversed(self.scope_stack):
+                if name in scope.defs:
+                    return scope
 
-        sc = find_scope(name)
-        if sc is not None:
+        scope = find_scope(name)
+        if scope is not None:
             if isinstance(value, Node):
-                sc.defs[name] = value
-                logger.info("Set %s in %s to %s" % (name, sc, value))
+                scope.defs[name] = value
+                logger.info("Set %s in %s to %s" % (name, scope, value))
             else:
                 # TODO: should always be a Node or None
-                logger.debug("Set %s in %s: value %s is not a Node" % (name, sc, value))
+                logger.debug("Set %s in %s: value %s is not a Node" % (name, scope, value))
         else:
             logger.debug("Set: name %s not in scope" % (name))
 
@@ -1375,7 +1373,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         obj_node, attr_name = self.resolve_attribute(ast_node)
 
         if isinstance(obj_node, Node) and obj_node.namespace is not None:
-            ns = obj_node.get_name()  # fully qualified namespace **of attr**
+            namespace = obj_node.get_name()  # fully qualified namespace **of attr**
 
             # detect str.join() and similar (attributes of constant literals)
             #
@@ -1383,28 +1381,28 @@ class CallGraphVisitor(ast.NodeVisitor):
             # but only in a load context. (set_attribute() does not have this
             # special handling, by design.)
             #
-            if ns in ("Num", "Str"):  # TODO: other types?
-                return obj_node, self.get_node(ns, attr_name, None, flavor=Flavor.ATTRIBUTE)
+            if namespace in ("Num", "Str"):  # TODO: other types?
+                return obj_node, self.get_node(namespace, attr_name, None, flavor=Flavor.ATTRIBUTE)
 
             # look up attr_name in the given namespace, return Node or None
-            def lookup(ns):
-                if ns in self.scopes:
-                    sc = self.scopes[ns]
-                    if attr_name in sc.defs:
-                        return sc.defs[attr_name]
+            def lookup(namespace):
+                if namespace in self.scopes:
+                    scope = self.scopes[namespace]
+                    if attr_name in scope.defs:
+                        return scope.defs[attr_name]
 
-            # first try directly in object's ns (this works already in pass 1)
-            value_node = lookup(ns)
+            # first try directly in object's namespace (this works already in pass 1)
+            value_node = lookup(namespace)
             if value_node is not None:
                 return obj_node, value_node
 
-            # next try ns of each ancestor (this works only in pass 2,
+            # next try namespace of each ancestor (this works only in pass 2,
             # after self.mro has been populated)
             #
             if obj_node in self.mro:
                 for base_node in tail(self.mro[obj_node]):  # the first element is always obj itself
-                    ns = base_node.get_name()
-                    value_node = lookup(ns)
+                    namespace = base_node.get_name()
+                    value_node = lookup(namespace)
                     if value_node is not None:
                         break
                 else:
@@ -1432,10 +1430,10 @@ class CallGraphVisitor(ast.NodeVisitor):
         obj_node, attr_name = self.resolve_attribute(ast_node)
 
         if isinstance(obj_node, Node) and obj_node.namespace is not None:
-            ns = obj_node.get_name()  # fully qualified namespace **of attr**
-            if ns in self.scopes:
-                sc = self.scopes[ns]
-                sc.defs[attr_name] = new_value
+            namespace = obj_node.get_name()  # fully qualified namespace **of attr**
+            if namespace in self.scopes:
+                scope = self.scopes[namespace]
+                scope.defs[attr_name] = new_value
                 return True
         return False
 
@@ -1460,11 +1458,9 @@ class CallGraphVisitor(ast.NodeVisitor):
         (strictly) more specific than the node's existing one.
         See node.Flavor.specificity().
 
-        !!!
-        In CallGraphVisitor, always use get_node() to create nodes, because it
-        also sets some important auxiliary information. Do not call the Node
-        constructor directly.
-        !!!
+        *IMPORTANT* In CallGraphVisitor, always use get_node() to create nodes,
+        because it also sets some important auxiliary information. Do not call the
+        Node constructor directly.
         """
 
         if name in self.nodes:
@@ -1492,23 +1488,23 @@ class CallGraphVisitor(ast.NodeVisitor):
         else:  # Assume the Node belongs to the current file.
             filename = self.filename
 
-        n = Node(namespace, name, ast_node, filename, flavor)
+        node = Node(namespace, name, ast_node, filename, flavor)
 
         # Add to the list of nodes that have this short name.
         if name in self.nodes:
-            self.nodes[name].append(n)
+            self.nodes[name].append(node)
         else:
-            self.nodes[name] = [n]
+            self.nodes[name] = [node]
 
-        return n
+        return node
 
     def get_parent_node(self, graph_node):
         """Get the parent node of the given Node. (Used in postprocessing.)"""
         if "." in graph_node.namespace:
-            ns, name = graph_node.namespace.rsplit(".", 1)
+            namespace, name = graph_node.namespace.rsplit(".", 1)
         else:
-            ns, name = "", graph_node.namespace
-        return self.get_node(ns, name, None)
+            namespace, name = "", graph_node.namespace
+        return self.get_node(namespace, name, None)
 
     def associate_node(self, graph_node, ast_node, filename=None):
         """Change the AST node (and optionally filename) mapping of a graph node.
@@ -1768,3 +1764,6 @@ class CallGraphVisitor(ast.NodeVisitor):
                             logger.info("Collapsing inner from %s to %s, uses %s" % (n, pn, n2))
                             self.add_uses_edge(pn, n2)
                     n.defined = False
+
+
+
