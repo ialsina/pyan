@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 # -*- coding: utf-8 -*-
 """
     pyan.py - Generate approximate call graphs for Python programs.
@@ -12,43 +13,33 @@
 from argparse import ArgumentParser
 from glob import glob
 import os
+import sys
 
 from .analyzer import CallGraphVisitor
 from .visgraph import VisualGraph
 from .writers import DotWriter, HTMLWriter, SVGWriter, TgfWriter, YedWriter
 from .log import setup_logging, logger
 
-
-def main(cli_args=None):
+def _get_parser():
     usage = """%(prog)s FILENAME... [--dot|--tgf|--yed|--svg|--html]"""
     desc = (
-        "Analyse one or more Python source files and generate an"
-        "approximate call graph of the modules, classes and functions"
-        " within them."
+        "Analyse one or more Python source files and generate an "
+        "approximate call graph of the modules, classes and functions "
+        "within them."
     )
 
     parser = ArgumentParser(usage=usage, description=desc)
-
+    parser.add_argument("glob", action="store", nargs="+", metavar="FILENAME(S)")
     parser.add_argument("--dot", action="store_true", default=False, help="output in GraphViz dot format")
-
     parser.add_argument("--tgf", action="store_true", default=False, help="output in Trivial Graph Format")
-
     parser.add_argument("--svg", action="store_true", default=False, help="output in SVG Format")
-
     parser.add_argument("--html", action="store_true", default=False, help="output in HTML Format")
-
     parser.add_argument("--yed", action="store_true", default=False, help="output in yEd GraphML Format")
-
     parser.add_argument("--file", dest="filename", help="write graph to FILE", metavar="FILE", default=None)
-
     parser.add_argument("--namespace", dest="namespace", help="filter for NAMESPACE", metavar="NAMESPACE", default=None)
-
     parser.add_argument("--function", dest="function", help="filter for FUNCTION", metavar="FUNCTION", default=None)
-
     parser.add_argument("-l", "--log", dest="logname", help="write log to LOG", metavar="LOG")
-
     parser.add_argument("-v", "--verbose", action="store_true", default=False, dest="verbose", help="verbose output")
-
     parser.add_argument(
         "-V",
         "--very-verbose",
@@ -57,7 +48,6 @@ def main(cli_args=None):
         dest="very_verbose",
         help="even more verbose output (mainly for debug)",
     )
-
     parser.add_argument(
         "-d",
         "--defines",
@@ -65,7 +55,6 @@ def main(cli_args=None):
         dest="draw_defines",
         help="add edges for 'defines' relationships [default]",
     )
-
     parser.add_argument(
         "-n",
         "--no-defines",
@@ -74,7 +63,6 @@ def main(cli_args=None):
         dest="draw_defines",
         help="do not add edges for 'defines' relationships",
     )
-
     parser.add_argument(
         "-u",
         "--uses",
@@ -83,7 +71,6 @@ def main(cli_args=None):
         dest="draw_uses",
         help="add edges for 'uses' relationships [default]",
     )
-
     parser.add_argument(
         "-N",
         "--no-uses",
@@ -92,7 +79,6 @@ def main(cli_args=None):
         dest="draw_uses",
         help="do not add edges for 'uses' relationships",
     )
-
     parser.add_argument(
         "-c",
         "--colored",
@@ -101,7 +87,6 @@ def main(cli_args=None):
         dest="colored",
         help="color nodes according to namespace [dot only]",
     )
-
     parser.add_argument(
         "-G",
         "--grouped-alt",
@@ -110,7 +95,6 @@ def main(cli_args=None):
         dest="grouped_alt",
         help="suggest grouping by adding invisible defines edges [only useful with --no-defines]",
     )
-
     parser.add_argument(
         "-g",
         "--grouped",
@@ -119,7 +103,6 @@ def main(cli_args=None):
         dest="grouped",
         help="group nodes (create subgraphs) according to namespace [dot only]",
     )
-
     parser.add_argument(
         "-e",
         "--nested-groups",
@@ -128,7 +111,6 @@ def main(cli_args=None):
         dest="nested_groups",
         help="create nested groups (subgraphs) for nested namespaces (implies -g) [dot only]",
     )
-
     parser.add_argument(
         "--dot-rankdir",
         default="TB",
@@ -140,7 +122,6 @@ def main(cli_args=None):
             "[dot only]"
         ),
     )
-
     parser.add_argument(
         "-a",
         "--annotated",
@@ -149,79 +130,80 @@ def main(cli_args=None):
         dest="annotated",
         help="annotate with module and source line number",
     )
-
     parser.add_argument(
         "--root",
         default=None,
         dest="root",
         help="Package root directory. Is inferred by default.",
     )
+    return parser
 
-    known_args, unknown_args = parser.parse_known_args(cli_args)
+def _get_graph_options(args):
+    # TODO: Use subparser
+    return {
+        "draw_defines": args.draw_defines,
+        "draw_uses": args.draw_uses,
+        "colored": args.colored,
+        "grouped_alt": args.grouped_alt,
+        "grouped": args.grouped,
+        "nested_groups": args.nested_groups,
+        "annotated": args.annotated,
+    }
 
-    filenames = [fn2 for fn in unknown_args for fn2 in glob(fn, recursive=True)]
+def _write_graphs(graph, args):
+    writers = []
+    if args.dot:
+        DotWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+    if args.html:
+        HTMLWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+    if args.svg:
+        SVGWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+    if args.tgf:
+        TgfWriter(graph, output=args.filename).run()
+    if args.yed:
+        YedWriter(graph, output=args.filename).run()
+
+def main(cli_args=None):
+    if cli_args is None:
+        cli_args = sys.argv[1:]
+
+    parser = _get_parser()
+    args = parser.parse_args(cli_args)
+    filenames = [fn2 for fn in args.glob for fn2 in glob(fn, recursive=True)]
+
+    if len(args.glob) == 0:
+        parser.error("Need one or more filenames to process")
+    elif len(filenames) == 0:
+        parser.error("No files found matching given glob: %s" % " ".join(args.glob))
+
+    if args.nested_groups:
+        args.grouped = True
+
+    graph_options = _get_graph_options(args)
+    setup_logging(verbose=args.verbose,
+                  very_verbose=args.very_verbose,
+                  file=args.logname,
+                  )
 
     # determine root
-    if known_args.root is not None:
-        root = os.path.abspath(known_args.root)
+    if args.root is not None:
+        root = os.path.abspath(args.root)
     else:
         root = None
 
-    if len(unknown_args) == 0:
-        parser.error("Need one or more filenames to process")
-    elif len(filenames) == 0:
-        parser.error("No files found matching given glob: %s" % " ".join(unknown_args))
+    visitor = CallGraphVisitor(filenames, root=root)
 
-    if known_args.nested_groups:
-        known_args.grouped = True
-
-    graph_options = {
-        "draw_defines": known_args.draw_defines,
-        "draw_uses": known_args.draw_uses,
-        "colored": known_args.colored,
-        "grouped_alt": known_args.grouped_alt,
-        "grouped": known_args.grouped,
-        "nested_groups": known_args.nested_groups,
-        "annotated": known_args.annotated,
-    }
-
-    setup_logging(verbose=known_args.verbose, very_verbose=known_args.very_verbose, file=known_args.logname)
-
-    v = CallGraphVisitor(filenames, root=root)
-
-    if known_args.function or known_args.namespace:
-
-        if known_args.function:
-            function_name = known_args.function.split(".")[-1]
-            namespace = ".".join(known_args.function.split(".")[:-1])
-            node = v.get_node(namespace, function_name)
-
+    if args.function or args.namespace:
+        if args.function:
+            function_name = args.function.split(".")[-1]
+            namespace = ".".join(args.function.split(".")[:-1])
+            node = visitor.get_node(namespace, function_name)
         else:
             node = None
+        visitor.filter(node=node, namespace=args.namespace)
 
-        v.filter(node=node, namespace=known_args.namespace)
-
-    graph = VisualGraph.from_visitor(v, options=graph_options)
-
-    writer = None
-
-    if known_args.dot:
-        writer = DotWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
-
-    if known_args.html:
-        writer = HTMLWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
-
-    if known_args.svg:
-        writer = SVGWriter(graph, options=["rankdir=" + known_args.rankdir], output=known_args.filename)
-
-    if known_args.tgf:
-        writer = TgfWriter(graph, output=known_args.filename)
-
-    if known_args.yed:
-        writer = YedWriter(graph, output=known_args.filename)
-
-    if writer:
-        writer.run()
+    graph = VisualGraph.from_visitor(visitor, options=graph_options)
+    _write_graphs(graph, args)
 
 
 if __name__ == "__main__":
