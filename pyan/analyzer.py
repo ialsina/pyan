@@ -150,7 +150,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         logger.debug("All base classes (non-recursive, local level only): %s" % self.class_base_nodes)
 
         logger.debug("Resolving method resolution order (MRO) for all analyzed classes")
-        self.mro = resolve_method_resolution_order(self.class_base_nodes, logger)
+        self.mro = resolve_method_resolution_order(self.class_base_nodes)
         logger.debug("Method resolution order (MRO) for all analyzed classes: %s" % self.mro)
 
     def postprocess(self):

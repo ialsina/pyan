@@ -126,7 +126,7 @@ def sanitize_exprs(exprs):
         return process(exprs)
 
 
-def resolve_method_resolution_order(class_base_nodes, logger):
+def resolve_method_resolution_order(class_base_nodes):
     """Compute the method resolution order (MRO) for each of the analyzed classes.
 
     class_base_nodes: dict cls: [base1, base2, ..., baseN]
