@@ -9,7 +9,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from jinja2 import Template
 from .log import logger
@@ -28,7 +27,7 @@ class Writer(ABC):
     @staticmethod
     def _validate_output(output):
         if output is None:
-            return StringIO()
+            return None
         if not isinstance(output, (str, Path, StringIO)):
             raise TypeError(
                 "output must be of type 'str', 'Path', 'StringIO' or None, "
@@ -86,20 +85,18 @@ class Writer(ABC):
         return self._outstream
 
     def close(self):
-        try:
-            if not isinstance(self.outstream, StringIO):
-                self.outstream.close()
-        except TypeError:
+        if self.output is None:
             return
+        if not isinstance(self.outstream, StringIO):
+            self.outstream.close()
 
     def open(self):
-        try:
-            if isinstance(self.output, StringIO):  # write to stream
-                self._outstream = self.output
-            else:
-                self._outstream = open(self.output, "w", encoding="utf-8")
-        except TypeError:
+        if self.output is None:
             self._outstream = sys.stdout
+        elif isinstance(self.output, StringIO):  # write to stream
+            self._outstream = self.output
+        else:
+            self._outstream = open(self.output, "w", encoding="utf-8")
 
     def dedent(self, level=1):
         self.indent_level -= level
@@ -240,14 +237,16 @@ class DotAdapter(DotWriter, ABC):
         pass
 
     def close(self):
-        super().close()
-        output = self.converted_output
+        converted_output = self.converted_output
         converted = self.convert(self.outstream)
-        if isinstance(output, StringIO):
-            self.converted_output.write(converted)
+        if converted_output is None:
+            sys.stdout.write(converted)
+        elif isinstance(converted_output, StringIO):
+            converted_output.write(converted)
         else:
-            with open(output, "w", encoding="utf-8") as f:
+            with open(converted, "w", encoding="utf-8") as f:
                 f.write(converted)
+        super().close()
 
 
 class SVGWriter(DotAdapter):
