@@ -3,22 +3,57 @@
 
 """Graph markup writers."""
 
+from abc import ABC, abstractmethod
 import io
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from jinja2 import Template
 from .log import logger
+from .visgraph import VisualGraph
 
 
 
-class Writer(object):
-    def __init__(self, graph, output=None, tabstop=4):
+class Writer(ABC):
+    def __init__(self, graph: VisualGraph, output: str | Path, tabstop: int = 4):
         self.graph = graph
         self.output = output
         self.indent_level = 0
         self.tabstop = tabstop * " "
+
+    @abstractmethod
+    def start_graph(self):
+        pass
+
+    @abstractmethod
+    def start_subgraph(self, graph):
+        pass
+
+    @abstractmethod
+    def write_node(self, node):
+        pass
+
+    @abstractmethod
+    def start_edges(self):
+        pass
+
+    @abstractmethod
+    def write_edge(self, edge):
+        pass
+
+    @abstractmethod
+    def finish_edges(self):
+        pass
+
+    @abstractmethod
+    def finish_subgraph(self, graph):
+        pass
+
+    @abstractmethod
+    def finish_graph(self):
+        pass
 
     def indent(self, level=1):
         self.indent_level += level
@@ -59,36 +94,19 @@ class Writer(object):
             self.write_edge(edge)
         self.finish_edges()
 
+
+class TgfWriter(Writer):
+    def __init__(self, graph, output):
+        super().__init__(graph, output=output)
+        self.i = 1
+        self.id_map = {}
+
     def start_graph(self):
         pass
 
     def start_subgraph(self, graph):
-        pass
-
-    def write_node(self, node):
-        pass
-
-    def start_edges(self):
-        pass
-
-    def write_edge(self, edge):
-        pass
-
-    def finish_edges(self):
-        pass
-
-    def finish_subgraph(self, graph):
-        pass
-
-    def finish_graph(self):
-        pass
-
-
-class TgfWriter(Writer):
-    def __init__(self, graph, output=None):
-        Writer.__init__(self, graph, output=output)
-        self.i = 1
-        self.id_map = {}
+        # TODO: Check if it really isn't needed
+         pass
 
     def write_node(self, node):
         self.write("%d %s" % (self.i, node.label))
@@ -102,10 +120,20 @@ class TgfWriter(Writer):
         flavor = "U" if edge.flavor == "uses" else "D"
         self.write("%s %s %s" % (self.id_map[edge.source], self.id_map[edge.target], flavor))
 
+    def finish_edges(self):
+        pass
+
+    def finish_subgraph(self, graph):
+        # TODO: Check if it really isn't needed
+         pass
+
+    def finish_graph(self):
+        pass
+
 
 class DotWriter(Writer):
-    def __init__(self, graph, options=None, output=None, tabstop=4):
-        Writer.__init__(self, graph, output=output, tabstop=tabstop)
+    def __init__(self, graph, options, output, tabstop=4):
+        super().__init__(graph=graph, output=output, tabstop=tabstop)
         options = options or []
         if graph.grouped:
             options += ['clusterrank="local"']
@@ -127,18 +155,15 @@ class DotWriter(Writer):
         # group of colored nodes)
         self.write('graph [style="filled,rounded", fillcolor="#80808018", label="%s"];' % graph.label)
 
-    def finish_subgraph(self, graph):
-        logger.info("Finish subgraph %s" % graph.label)
-        # terminate previous subgraph
-        self.dedent()
-        self.write("}")
-
     def write_node(self, node):
         logger.info("Write node %s" % node.label)
         self.write(
             '%s [label="%s", style="filled", fillcolor="%s",'
             ' fontcolor="%s", group="%s"];' % (node.id, node.label, node.fill_color, node.text_color, node.group)
         )
+
+    def start_edges(self):
+        pass
 
     def write_edge(self, edge):
         source = edge.source
@@ -148,6 +173,15 @@ class DotWriter(Writer):
             self.write('    %s -> %s [style="dashed",  color="%s"];' % (source.id, target.id, color))
         else:  # edge.flavor == 'uses':
             self.write('    %s -> %s [style="solid",  color="%s"];' % (source.id, target.id, color))
+
+    def finish_edges(self):
+        pass
+
+    def finish_subgraph(self, graph):
+        logger.info("Finish subgraph %s" % graph.label)
+        # terminate previous subgraph
+        self.dedent()
+        self.write("}")
 
     def finish_graph(self):
         self.write("}")  # terminate "digraph G {"
@@ -204,8 +238,8 @@ class HTMLWriter(SVGWriter):
 
 
 class YedWriter(Writer):
-    def __init__(self, graph, output=None, tabstop=2):
-        Writer.__init__(self, graph, output=output, tabstop=tabstop)
+    def __init__(self, graph, output, tabstop=2):
+        super().__init__(graph, output=output, tabstop=tabstop)
         self.grouped = graph.grouped
         self.indent_level = 0
         self.edge_id = 0
@@ -261,13 +295,6 @@ class YedWriter(Writer):
         self.write('<graph edgedefault="directed" id="%s::">' % graph.id)
         self.indent()
 
-    def finish_subgraph(self, graph):
-        logger.info("Finish subgraph %s" % graph.label)
-        self.dedent()
-        self.write("</graph>")
-        self.dedent()
-        self.write("</node>")
-
     def write_node(self, node):
         logger.info("Write node %s" % node.label)
         width = 20 + 10 * len(node.label)
@@ -288,6 +315,9 @@ class YedWriter(Writer):
         self.write("</data>")
         self.dedent()
         self.write("</node>")
+
+    def start_edges(self):
+        pass
 
     def write_edge(self, edge):
         self.edge_id += 1
@@ -312,8 +342,19 @@ class YedWriter(Writer):
         self.dedent()
         self.write("</edge>")
 
+    def finish_edges(self):
+        pass
+
+    def finish_subgraph(self, graph):
+        logger.info("Finish subgraph %s" % graph.label)
+        self.dedent()
+        self.write("</graph>")
+        self.dedent()
+        self.write("</node>")
+
     def finish_graph(self):
         self.dedent(2)
         self.write("  </graph>")
         self.dedent()
         self.write("</graphml>")
+
