@@ -4,11 +4,12 @@
 """Graph markup writers."""
 
 from abc import ABC, abstractmethod
-import io
+from io import StringIO
 import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 from jinja2 import Template
 from .log import logger
@@ -17,11 +18,24 @@ from .visgraph import VisualGraph
 
 
 class Writer(ABC):
-    def __init__(self, graph: VisualGraph, output: str | Path, tabstop: int = 4):
+    def __init__(self, graph: VisualGraph, output=None, tabstop=4):
+        if output is None:
+            output = StringIO()
+        if not isinstance(output, (str, Path, StringIO)):
+            raise TypeError(
+                "output must be of type 'str', 'Path', 'StringIO' or None, "
+                f"but was '{output.__class__.__name__}'."
+            )
+        if not isinstance(tabstop, int):
+            raise TypeError(
+                "tabstop must be of type 'int', "
+                f"but was '{tabstop.__class__.__name__}'."
+            )
         self.graph = graph
-        self.output = output
         self.indent_level = 0
-        self.tabstop = tabstop * " "
+        self.output = output
+        self.tabstop = " " * tabstop
+        self._outstream = None
 
     @abstractmethod
     def start_graph(self):
@@ -55,30 +69,49 @@ class Writer(ABC):
     def finish_graph(self):
         pass
 
-    def indent(self, level=1):
-        self.indent_level += level
+    @property
+    def outstream(self):
+        if self._outstream is None:
+            raise IOError(
+                "Stream isn't open yet. Please call method `open`."
+            )
+        return self._outstream
+
+    def close(self):
+        try:
+            if not isinstance(self.outstream, StringIO):
+                self.outstream.close()
+        except TypeError:
+            return
+
+    def open(self):
+        try:
+            if isinstance(self.output, StringIO):  # write to stream
+                self._outstream = self.output
+            else:
+                self._outstream = open(self.output, "w", encoding="utf-8")
+        except TypeError:
+            self._outstream = sys.stdout
 
     def dedent(self, level=1):
         self.indent_level -= level
 
-    def write(self, line):
-        self.outstream.write(self.tabstop * self.indent_level + line + "\n")
+    def indent(self, level=1):
+        self.indent_level += level
 
     def run(self):
         logger.info("%s running" % type(self))
-        try:
-            if isinstance(self.output, io.StringIO):  # write to stream
-                self.outstream = self.output
-            else:
-                self.outstream = open(self.output, "w")  # write to file
-        except TypeError:
-            self.outstream = sys.stdout
+        self.open()
         self.start_graph()
         self.write_subgraph(self.graph)
         self.write_edges()
         self.finish_graph()
-        if self.output and not isinstance(self.output, io.StringIO):
-            self.outstream.close()
+        self.close()
+
+    def write(self, line):
+        self.outstream.write(
+            self.tabstop * self.indent_level + line + "\n"
+        )
 
     def write_subgraph(self, graph):
         self.start_subgraph(graph)
@@ -187,54 +220,45 @@ class DotWriter(Writer):
         self.write("}")  # terminate "digraph G {"
 
 
-class SVGWriter(DotWriter):
-    def run(self):
-        # write dot file
-        logger.info("%s running" % type(self))
-        self.outstream = io.StringIO()
-        self.start_graph()
-        self.write_subgraph(self.graph)
-        self.write_edges()
-        self.finish_graph()
+class DotAdapter(DotWriter, ABC):
 
-        # convert to svg
-        svg = subprocess.run(
-            "dot -Tsvg", shell=True, stdout=subprocess.PIPE, input=self.outstream.getvalue().encode()
-        ).stdout.decode()
+    def __init__(self, graph, options, output, tabstop=4):
+        super().__init__(graph=graph, options=options, output=StringIO(), tabstop=tabstop)
+        self.converted_output = output
 
-        if self.output:
-            if isinstance(self.output, io.StringIO):
-                self.output.write(svg)
-            else:
-                with open(self.output, "w") as f:
-                    f.write(svg)
+    @staticmethod
+    @abstractmethod
+    def convert(stream) -> str:
+        pass
+
+    def close(self):
+        super().close()
+        output = self.converted_output
+        converted = self.convert(self.outstream)
+        if isinstance(output, StringIO):
+            self.converted_output.write(converted)
         else:
-            print(svg)
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(converted)
+
+
+class SVGWriter(DotAdapter):
+    @staticmethod
+    def convert(stream):
+        return subprocess.run(
+            "dot -Tsvg", shell=True, stdout=subprocess.PIPE, input=stream.getvalue().encode()
+        ).stdout.decode()
 
 
 class HTMLWriter(SVGWriter):
-    def run(self):
-        with io.StringIO() as svg_stream:
-            # run SVGWriter with stream as output
-            output = self.output
-            self.output = svg_stream
-            super().run()
-            svg = svg_stream.getvalue()
-            self.output = output
-
-        # insert svg into html
+    @staticmethod
+    def convert(stream):
+        svg = SVGWriter.convert(stream)
+        # TODO: Import a root directory from a config file in settings
         with open(os.path.join(os.path.dirname(__file__), "callgraph.html"), "r") as f:
             template = Template(f.read())
-
         html = template.render(svg=svg)
-        if self.output:
-            if isinstance(self.output, io.StringIO):
-                self.output.write(html)
-            else:
-                with open(self.output, "w") as f:
-                    f.write(html)
-        else:
-            print(html)
+        return html
 
 
 class YedWriter(Writer):
