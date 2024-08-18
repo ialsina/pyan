@@ -17,8 +17,25 @@ import sys
 
 from .analyzer import CallGraphVisitor
 from .visgraph import VisualGraph
-from .writers import DotWriter, HTMLWriter, SVGWriter, TgfWriter, YedWriter
+from .writers import DotWriter, HTMLWriter, DotConverter, TgfWriter, YedWriter
 from .log import setup_logging, logger
+
+# TODO: Add command to display allowed formats, dot formats and dot layouts
+# TODO: Update documentation about this
+ALLOWED_FORMATS = (
+    "dot", "html", "tgf", "yed"
+)
+DOT_FORMATS = (
+    "bmp", "cgimage", "canon", "dot", "gv", "xdot", "xdot1.2", "xdot1.4",
+    "eps", "exr", "fig", "gd", "gd2", "gif", "gtk", "ico", "imap", "imap_np",
+    "ismap", "cmap", "cmapx", "cmapx_np", "jpg", "jpeg", "jpe", "jp2", "json", "json0",
+    "dot_json", "xdot_json", "pdf", "pic", "pct", "pict", "plain", "plain-ext", "png",
+    "pov", "ps", "ps2", "psd", "sgi", "svg", "svgz", "tga", "tif", "tiff", "tk",
+    "vml", "vmlz", "vrml", "wbmp", "webp", "xlib", "x11",
+)
+DOT_LAYOUTS = (
+    "dot", "neato", "fdp", "sfdp", "circo", "twopi", "nop", "nop2", "osage", "patchwork"
+)
 
 def _get_parser():
     usage = """%(prog)s FILENAME... [--dot|--tgf|--yed|--svg|--html]"""
@@ -30,15 +47,24 @@ def _get_parser():
 
     parser = ArgumentParser(usage=usage, description=desc)
     parser.add_argument("glob", action="store", nargs="+", metavar="FILENAME(S)")
-    parser.add_argument("--dot", action="store_true", default=False, help="output in GraphViz dot format")
-    parser.add_argument("--tgf", action="store_true", default=False, help="output in Trivial Graph Format")
-    parser.add_argument("--svg", action="store_true", default=False, help="output in SVG Format")
-    parser.add_argument("--html", action="store_true", default=False, help="output in HTML Format")
-    parser.add_argument("--yed", action="store_true", default=False, help="output in yEd GraphML Format")
     parser.add_argument("-o", "--output", dest="output", help="write graph to OUTPUT", metavar="OUTPUT", default=None)
+    parser.add_argument(
+        "-f", "--format",
+        action="store",
+        default="png",
+        choices=list(ALLOWED_FORMATS) + list(DOT_FORMATS),
+        help="output format"
+    )
+    parser.add_argument(
+        "-l", "--layout",
+        action="store",
+        default=DOT_LAYOUTS[0],
+        choices=list(DOT_LAYOUTS),
+        help="dot layout format"
+    )
     parser.add_argument("--namespace", dest="namespace", help="filter for NAMESPACE", metavar="NAMESPACE", default=None)
     parser.add_argument("--function", dest="function", help="filter for FUNCTION", metavar="FUNCTION", default=None)
-    parser.add_argument("-l", "--log", dest="logname", help="write log to LOG", metavar="LOG")
+    parser.add_argument("-L", "--log", dest="logname", help="write log to LOG", metavar="LOG")
     parser.add_argument("-v", "--verbose", action="store_true", default=False, dest="verbose", help="verbose output")
     parser.add_argument(
         "-V",
@@ -150,18 +176,37 @@ def _get_graph_options(args):
         "annotated": args.annotated,
     }
 
-def _write_graphs(graph, args):
-    writers = []
-    if args.dot:
-        DotWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
-    if args.html:
-        HTMLWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
-    if args.svg:
-        SVGWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
-    if args.tgf:
-        TgfWriter(graph, output=args.output).run()
-    if args.yed:
-        YedWriter(graph, output=args.output).run()
+def _write_graph(graph, args):
+    if args.format not in list(ALLOWED_FORMATS) + list(DOT_FORMATS):
+        raise ValueError(
+            f"Unknown format: '{format}'."
+        )
+    if format == "dot":
+        writer = DotWriter(
+            graph,
+            options=["rankdir=" + args.rankdir],
+            output=args.output,
+        )
+    elif format == "html":
+        writer = HTMLWriter(
+            graph,
+            options=["rankdir=" + args.rankdir],
+            output=args.output,
+            layout=args.layout,
+        )
+    elif format == "tgf":
+        writer = TgfWriter(graph, output=args.output)
+    elif format == "yed":
+        writer = YedWriter(graph, output=args.output)
+    else:
+        writer = DotConverter(
+            graph,
+            options=["rankdir=" + args.rankdir],
+            output=args.output,
+            format=args.format,
+            layout=args.layout,
+        )
+    writer.run()
 
 def main(cli_args=None):
     if cli_args is None:
@@ -203,7 +248,7 @@ def main(cli_args=None):
         visitor.filter(node=node, namespace=args.namespace)
 
     graph = VisualGraph.from_visitor(visitor, options=graph_options)
-    _write_graphs(graph, args)
+    _write_graph(graph, args)
 
 
 if __name__ == "__main__":

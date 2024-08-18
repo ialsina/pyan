@@ -225,20 +225,26 @@ class DotWriter(Writer):
         self.write("}")  # terminate "digraph G {"
 
 
-class DotAdapter(DotWriter, ABC):
+class DotConverter(DotWriter, ABC):
 
-    def __init__(self, graph, options, output, tabstop=4):
-        super().__init__(graph=graph, options=options, output=StringIO(), tabstop=tabstop)
+    def __init__(self, graph, options, output, format="svg", layout=None, tabstop=4):
         self.converted_output = self._validate_output(output)
+        self.format = format
+        self.layout = layout
+        super().__init__(graph=graph, options=options, output=StringIO(), tabstop=tabstop)
 
-    @staticmethod
-    @abstractmethod
-    def convert(stream) -> str:
-        pass
+    def convert(self):
+        command = f"dot -T{self.format}"
+        if self.layout is not None:
+            command += f" -K{self.layout}"
+        input = self.outstream.getvalue().encode()
+        return subprocess.run(
+            command, shell=True, stdout=subprocess.PIPE, input=input
+        ).stdout.decode()
 
     def close(self):
         converted_output = self.converted_output
-        converted = self.convert(self.outstream)
+        converted = self.convert()
         if converted_output is None:
             sys.stdout.write(converted)
         elif isinstance(converted_output, StringIO):
@@ -249,20 +255,19 @@ class DotAdapter(DotWriter, ABC):
         super().close()
 
 
-class SVGWriter(DotAdapter):
-    @staticmethod
-    def convert(stream):
-        return subprocess.run(
-            "dot -Tsvg", shell=True, stdout=subprocess.PIPE, input=stream.getvalue().encode()
-        ).stdout.decode()
+class HTMLWriter(DotConverter):
+    # TODO: Import a root directory from a config file in settings
+    template_path = os.path.join(os.path.dirname(__file__), "callgraph.html")
 
+    def __init__(self, graph, options, output, layout=None, tabstop=4):
+        super().__init__(
+            graph=graph, options=options, output=output,
+            format="svg", layout=layout, tabstop=tabstop
+        )
 
-class HTMLWriter(SVGWriter):
-    @staticmethod
-    def convert(stream):
-        svg = SVGWriter.convert(stream)
-        # TODO: Import a root directory from a config file in settings
-        with open(os.path.join(os.path.dirname(__file__), "callgraph.html"), "r") as f:
+    def convert(self):
+        svg = super().convert()
+        with open(self.template_path, "r") as f:
             template = Template(f.read())
         html = template.render(svg=svg)
         return html
