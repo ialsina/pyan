@@ -203,7 +203,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 module_node = to_node
             else:
                 assert from_node.name == to_node.name
-                module_node = self.get_node("", to_node.namespace)
+                module_node = self.create_node("", to_node.namespace)
             module_uses = self.uses_edges.get(module_node)
             if module_uses is not None:
                 # check if in module item exists and if yes, map to it
@@ -342,7 +342,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         logger.debug("Module %s, %s" % (self.module_name, self.filename))
 
         # Modules live in the top-level namespace, ''.
-        module_node = self.get_node("", self.module_name, node, flavor=Flavor.MODULE)
+        module_node = self.create_node("", self.module_name, node, flavor=Flavor.MODULE)
         self.associate_node(module_node, node, filename=self.filename)
 
         namespace = self.module_name
@@ -361,9 +361,9 @@ class CallGraphVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         logger.debug("ClassDef %s, %s:%s" % (node.name, self.filename, node.lineno))
 
-        from_node = self.get_node_of_current_namespace()
+        from_node = self.create_node_of_current_namespace()
         namespace = from_node.get_name()
-        to_node = self.get_node(namespace, node.name, node, flavor=Flavor.CLASS)
+        to_node = self.create_node(namespace, node.name, node, flavor=Flavor.CLASS)
         if self.add_defines_edge(from_node, to_node):
             logger.info("Def from %s to Class %s" % (from_node, to_node))
 
@@ -383,7 +383,7 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         self.class_stack.append(to_node)
         self.name_stack.append(node.name)
-        inner_namespace = self.get_node_of_current_namespace().get_name()
+        inner_namespace = self.create_node_of_current_namespace().get_name()
         self.scope_stack.append(self.scopes[inner_namespace])
         self.context_stack.append("ClassDef %s" % (node.name))
 
@@ -421,9 +421,9 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         # Now we can create the Node.
         #
-        from_node = self.get_node_of_current_namespace()
+        from_node = self.create_node_of_current_namespace()
         namespace = from_node.get_name()
-        to_node = self.get_node(namespace, node.name, node, flavor=flavor)
+        to_node = self.create_node(namespace, node.name, node, flavor=flavor)
         if self.add_defines_edge(from_node, to_node):
             logger.info("Def from %s to Function %s" % (from_node, to_node))
 
@@ -435,7 +435,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         # Enter the function scope
         #
         self.name_stack.append(node.name)
-        inner_namespace = self.get_node_of_current_namespace().get_name()
+        inner_namespace = self.create_node_of_current_namespace().get_name()
         self.scope_stack.append(self.scopes[inner_namespace])
         self.context_stack.append("FunctionDef %s" % (node.name))
 
@@ -479,7 +479,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         # TODO: avoid lumping together all lambdas in the same namespace.
         logger.debug("Lambda, %s:%s" % (self.filename, node.lineno))
         with ExecuteInInnerScope(self, "lambda"):
-            inner_namespace = self.get_node_of_current_namespace().get_name()
+            inner_namespace = self.create_node_of_current_namespace().get_name()
             self.generate_args_nodes(node.args, inner_namespace)
             self.analyze_arguments(node.args)
             self.visit(node.body)  # single expr
@@ -500,7 +500,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         # is not a valid Python identifier.
         #
         # It has no sensible flavor, so we leave its flavor unspecified.
-        nonsense_node = self.get_node(inner_namespace, "^^^argument^^^", None)
+        nonsense_node = self.create_node(inner_namespace, "^^^argument^^^", None)
         # args, vararg (*args), kwonlyargs, kwarg (**kwargs)
         for a in ast_args.args:  # positional
             scope.defs[a.arg] = nonsense_node
@@ -551,7 +551,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         # resolve relative imports correctly.
         #
         # As a solution, we register imports here and later, when all files have been parsed, resolve them.
-        from_node = self.get_node_of_current_namespace()
+        from_node = self.create_node_of_current_namespace()
         if node.module is None:  # resolve relative imports 'None' such as "from . import foo"
             logger.debug(
                 "ImportFrom (original) from %s import %s, %s:%s"
@@ -583,9 +583,9 @@ class CallGraphVisitor(ast.NodeVisitor):
         for alias in node.names:
             # check if import is module
             if tgt_name + "." + alias.name in self.module_to_filename:
-                to_node = self.get_node("", tgt_name + "." + alias.name, node, flavor=Flavor.MODULE)
+                to_node = self.create_node("", tgt_name + "." + alias.name, node, flavor=Flavor.MODULE)
             else:
-                to_node = self.get_node(tgt_name, alias.name, node, flavor=Flavor.IMPORTEDITEM)
+                to_node = self.create_node(tgt_name, alias.name, node, flavor=Flavor.IMPORTEDITEM)
             # if there is alias, add extra edge between alias and node
             if alias.asname is not None:
                 alias_name = alias.asname
@@ -611,9 +611,9 @@ class CallGraphVisitor(ast.NodeVisitor):
         # mark the use site
         #
         # where it is being imported to, i.e. the **user**
-        from_node = self.get_node_of_current_namespace()
+        from_node = self.create_node_of_current_namespace()
         # the thing **being used** (under the asname, if any)
-        mod_node = self.get_node("", src_name, ast_node, flavor=Flavor.MODULE)
+        mod_node = self.create_node("", src_name, ast_node, flavor=Flavor.MODULE)
         # if there is alias, add extra edge between alias and node
         if import_item.asname is not None:
             alias_name = import_item.asname
@@ -636,9 +636,9 @@ class CallGraphVisitor(ast.NodeVisitor):
     def visit_Constant(self, node):
         logger.debug("Constant %s, %s:%s" % (node.value, self.filename, node.lineno))
         t = type(node.value)
-        namespace = self.get_node_of_current_namespace().get_name()
+        namespace = self.create_node_of_current_namespace().get_name()
         tn = t.__name__
-        self.last_value = self.get_node(namespace, tn, node, flavor=Flavor.ATTRIBUTE)
+        self.last_value = self.create_node(namespace, tn, node, flavor=Flavor.ATTRIBUTE)
 
     # attribute access (node.ctx determines whether set (ast.Store) or get (ast.Load))
     def visit_Attribute(self, node):
@@ -674,7 +674,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 logger.info("getattr %s on %s returns %s" % (node.attr, objname, attr_node))
 
                 # add uses edge
-                from_node = self.get_node_of_current_namespace()
+                from_node = self.create_node_of_current_namespace()
                 logger.debug("Use from %s to %s" % (from_node, attr_node))
                 if self.add_uses_edge(from_node, attr_node):
                     logger.info("New edge added for Use from %s to %s" % (from_node, attr_node))
@@ -702,9 +702,9 @@ class CallGraphVisitor(ast.NodeVisitor):
             #
             elif isinstance(obj_node, Node) and obj_node.namespace is not None:
                 tgt_name = node.attr
-                from_node = self.get_node_of_current_namespace()
+                from_node = self.create_node_of_current_namespace()
                 namespace = obj_node.get_name()  # fully qualified namespace **of attr**
-                to_node = self.get_node(namespace, tgt_name, node, flavor=Flavor.ATTRIBUTE)
+                to_node = self.create_node(namespace, tgt_name, node, flavor=Flavor.ATTRIBUTE)
                 logger.debug(
                     f"Use from {from_node} to {to_node} (target obj {obj_node} known but target attr "
                     f"{node.attr} not resolved; maybe fwd ref or unanalyzed import)"
@@ -745,9 +745,9 @@ class CallGraphVisitor(ast.NodeVisitor):
                 # has no known value, then don't try to create a Node for it.
                 if not isinstance(to_node, Node):
                     # namespace=None means we don't know the namespace yet
-                    to_node = self.get_node(None, tgt_name, node, flavor=Flavor.UNKNOWN)
+                    to_node = self.create_node(None, tgt_name, node, flavor=Flavor.UNKNOWN)
 
-                from_node = self.get_node_of_current_namespace()
+                from_node = self.create_node_of_current_namespace()
                 logger.debug("Use from %s to Name %s" % (from_node, to_node))
                 if self.add_uses_edge(from_node, to_node):
                     logger.info("New edge added for Use from %s to Name %s" % (from_node, to_node))
@@ -912,7 +912,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         if isinstance(result_node, Node):  # resolved result
             self.last_value = result_node
 
-            from_node = self.get_node_of_current_namespace()
+            from_node = self.create_node_of_current_namespace()
             to_node = result_node
             logger.debug("Use from %s to %s (via resolved call to built-ins)" % (from_node, to_node))
             if self.add_uses_edge(from_node, to_node):
@@ -936,9 +936,9 @@ class CallGraphVisitor(ast.NodeVisitor):
             # of known classes.
             #
             if self.last_value in self.class_base_ast_nodes:
-                from_node = self.get_node_of_current_namespace()
+                from_node = self.create_node_of_current_namespace()
                 class_node = self.last_value
-                to_node = self.get_node(class_node.get_name(), "__init__", None, flavor=Flavor.METHOD)
+                to_node = self.create_node(class_node.get_name(), "__init__", None, flavor=Flavor.METHOD)
                 logger.debug("Use from %s to %s (call creates an instance)" % (from_node, to_node))
                 if self.add_uses_edge(from_node, to_node):
                     logger.info(
@@ -951,12 +951,12 @@ class CallGraphVisitor(ast.NodeVisitor):
         def add_uses_enter_exit_of(graph_node):
             # add uses edges to __enter__ and __exit__ methods of given Node
             if isinstance(graph_node, Node):
-                from_node = self.get_node_of_current_namespace()
+                from_node = self.create_node_of_current_namespace()
                 withed_obj_node = graph_node
 
                 logger.debug("Use from %s to With %s" % (from_node, withed_obj_node))
                 for methodname in ("__enter__", "__exit__"):
-                    to_node = self.get_node(withed_obj_node.get_name(), methodname, None, flavor=Flavor.METHOD)
+                    to_node = self.create_node(withed_obj_node.get_name(), methodname, None, flavor=Flavor.METHOD)
                     if self.add_uses_edge(from_node, to_node):
                         logger.info("New edge added for Use from %s to %s" % (from_node, to_node))
 
@@ -1217,7 +1217,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 # Constants are builtins, so they should live in the
                 # top-level namespace (same level as module names).
                 #
-                # Since get_node() creates only one node per unique
+                # Since create_node() creates only one node per unique
                 # (namespace,name) pair, the AST node would anyway be
                 # frozen to the first constant of any matching type that
                 # the analyzer encountered in the analyzed source code,
@@ -1226,7 +1226,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 # The CLASS flavor is the best match, as these constants
                 # are object types.
                 #
-                obj_node = self.get_node("", tn, None, flavor=Flavor.CLASS)
+                obj_node = self.create_node("", tn, None, flavor=Flavor.CLASS)
 
             # attribute of a function call. Detect cases like super().dostuff()
             elif isinstance(ast_node.value, ast.Call):
@@ -1282,7 +1282,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         """Return the node representing the current class, or None if not inside a class definition."""
         return self.class_stack[-1] if len(self.class_stack) else None
 
-    def get_node_of_current_namespace(self):
+    def create_node_of_current_namespace(self):
         """Return the unique node representing the current namespace,
         based on self.name_stack.
 
@@ -1296,7 +1296,7 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         namespace = ".".join(self.name_stack[0:-1])
         name = self.name_stack[-1]
-        return self.get_node(namespace, name, None, flavor=Flavor.NAMESPACE)
+        return self.create_node(namespace, name, None, flavor=Flavor.NAMESPACE)
 
     ###########################################################################
     # Value getter and setter
@@ -1380,7 +1380,7 @@ class CallGraphVisitor(ast.NodeVisitor):
             # special handling, by design.)
             #
             if namespace in ("Num", "Str"):  # TODO: other types?
-                return obj_node, self.get_node(namespace, attr_name, None, flavor=Flavor.ATTRIBUTE)
+                return obj_node, self.create_node(namespace, attr_name, None, flavor=Flavor.ATTRIBUTE)
 
             # look up attr_name in the given namespace, return Node or None
             def lookup(namespace):
@@ -1438,7 +1438,7 @@ class CallGraphVisitor(ast.NodeVisitor):
     ###########################################################################
     # Graph creation
 
-    def get_node(self, namespace, name, ast_node=None, flavor=Flavor.UNSPECIFIED):
+    def create_node(self, namespace, name, ast_node=None, flavor=Flavor.UNSPECIFIED):
         """Return the unique node matching the namespace and name.
         Create a new node if one doesn't already exist.
 
@@ -1456,29 +1456,28 @@ class CallGraphVisitor(ast.NodeVisitor):
         (strictly) more specific than the node's existing one.
         See node.Flavor.specificity().
 
-        *IMPORTANT* In CallGraphVisitor, always use get_node() to create nodes,
+        *IMPORTANT* In CallGraphVisitor, always use create_node() to create nodes,
         because it also sets some important auxiliary information. Do not call the
         Node constructor directly.
         """
 
         if name in self.nodes:
-            for n in self.nodes[name]:
-                if n.namespace == namespace:
-                    if Flavor.specificity(flavor) > Flavor.specificity(n.flavor):
-                        n.flavor = flavor
-                    return n
+            for node in self.nodes[name]:
+                if node.namespace == namespace:
+                    if Flavor.specificity(flavor) > Flavor.specificity(node.flavor):
+                        node.flavor = flavor
+                    return node
 
         # Try to figure out which source file this Node belongs to
         # (for annotated output).
-        #
         # Other parts of the analyzer may change the filename later,
         # if a more authoritative source (e.g. a definition site) is found,
         # so the filenames should be trusted only after the analysis is
         # complete.
-        #
+
         # TODO: this is tentative. Add in filename only when sure?
         # (E.g. in visit_ClassDef(), visit_FunctionDef())
-        #
+
         if namespace in self.module_to_filename:
             # If the namespace is one of the modules being analyzed,
             # the the Node belongs to the correponding file.
@@ -1502,7 +1501,7 @@ class CallGraphVisitor(ast.NodeVisitor):
             namespace, name = graph_node.namespace.rsplit(".", 1)
         else:
             namespace, name = "", graph_node.namespace
-        return self.get_node(namespace, name, None)
+        return self.create_node(namespace, name, None)
 
     def associate_node(self, graph_node, ast_node, filename=None):
         """Change the AST node (and optionally filename) mapping of a graph node.
@@ -1667,7 +1666,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         for n in self.uses_edges:
             for n2 in self.uses_edges[n]:
                 if n2.namespace is not None and not n2.defined:
-                    n3 = self.get_node(None, n2.name, n2.ast_node)
+                    n3 = self.create_node(None, n2.name, n2.ast_node)
                     n3.defined = False
                     new_uses_edges.append((n, n3))
                     removed_uses_edges.append((n, n2))

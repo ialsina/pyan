@@ -73,16 +73,16 @@ def create_callgraph(
         "annotated": annotated,
     }
 
-    v = CallGraphVisitor(filenames, root=root)
+    visitor = CallGraphVisitor(filenames, root=root)
     if function or namespace:
         if function:
             function_name = function.split(".")[-1]
             function_namespace = ".".join(function.split(".")[:-1])
-            node = v.get_node(function_namespace, function_name)
+            node = visitor.create_node(function_namespace, function_name)
         else:
             node = None
-        v.filter(node=node, namespace=namespace, max_iter=max_iter)
-    graph = VisualGraph.from_visitor(v, options=graph_options)
+        visitor.filter(node=node, namespace=namespace, max_iter=max_iter)
+    graph = VisualGraph.from_visitor(visitor, options=graph_options)
 
     stream = io.StringIO()
     if format == "dot":

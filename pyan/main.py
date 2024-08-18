@@ -197,7 +197,7 @@ def main(cli_args=None):
         if args.function:
             function_name = args.function.split(".")[-1]
             namespace = ".".join(args.function.split(".")[:-1])
-            node = visitor.get_node(namespace, function_name)
+            node = visitor.create_node(namespace, function_name)
         else:
             node = None
         visitor.filter(node=node, namespace=args.namespace)

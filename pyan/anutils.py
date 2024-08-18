@@ -273,7 +273,7 @@ class ExecuteInInnerScope:
         scopename = self.scopename
 
         analyzer.name_stack.append(scopename)
-        inner_ns = analyzer.get_node_of_current_namespace().get_name()
+        inner_ns = analyzer.create_node_of_current_namespace().get_name()
         if inner_ns not in analyzer.scopes:
             analyzer.name_stack.pop()
             raise ValueError("Unknown scope '%s'" % (inner_ns))
@@ -299,9 +299,9 @@ class ExecuteInInnerScope:
         # current ns will be grouped into a single node, as they have no name.
         # We create a namespace-like node that has no associated AST node,
         # as it does not represent any unique AST node.
-        from_node = analyzer.get_node_of_current_namespace()
+        from_node = analyzer.create_node_of_current_namespace()
         ns = from_node.get_name()
-        to_node = analyzer.get_node(ns, scopename, None, flavor=Flavor.NAMESPACE)
+        to_node = analyzer.create_node(ns, scopename, None, flavor=Flavor.NAMESPACE)
         if analyzer.add_defines_edge(from_node, to_node):
             logger.info("Def from %s to %s %s" % (from_node, scopename, to_node))
         analyzer.last_value = to_node  # Make this inner scope node assignable to track its uses.
