@@ -10,18 +10,6 @@ from .node import Flavor
 from .log import logger
 
 
-def head(lst):
-    if len(lst):
-        return lst[0]
-
-
-def tail(lst):
-    if len(lst) > 1:
-        return lst[1:]
-    else:
-        return []
-
-
 # TODO: Test and benchmark both variants
 
 def recursive_scope_v1(parent_scope_name, table):
@@ -162,14 +150,15 @@ def resolve_method_resolution_order(class_base_nodes):
         out = []
         while True:
             logger.debug("MRO: C3 merge: out: %s, lists: %s" % (out, lists))
-            heads = [head(lst) for lst in lists if head(lst) is not None]
-            if not len(heads):
+            heads = [lst[0] for lst in lists if lst]
+            if len(heads) == 0:
                 break
-            tails = [tail(lst) for lst in lists]
+            tails = [lst[1:] for lst in lists]
             logger.debug("MRO: C3 merge: heads: %s, tails: %s" % (heads, tails))
             hd = C3_find_good_head(heads, tails)
             logger.debug("MRO: C3 merge: chose head %s" % (hd))
             out.append(hd)
+            # TODO: Review and simplify code.
             lists = remove_all_in(hd, lists)
         return out
 

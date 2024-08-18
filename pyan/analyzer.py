@@ -15,7 +15,6 @@ from .anutils import (
     get_module_name,
     resolve_method_resolution_order,
     sanitize_exprs,
-    tail,
     recursive_scope_v1,
     recursive_scope_v2,
 )
@@ -148,7 +147,6 @@ class CallGraphVisitor(ast.NodeVisitor):
                     self.class_base_nodes[node].append(baseclass_node)
 
         logger.debug("All base classes (non-recursive, local level only): %s" % self.class_base_nodes)
-
         logger.debug("Resolving method resolution order (MRO) for all analyzed classes")
         self.mro = resolve_method_resolution_order(self.class_base_nodes)
         logger.debug("Method resolution order (MRO) for all analyzed classes: %s" % self.mro)
@@ -1400,7 +1398,7 @@ class CallGraphVisitor(ast.NodeVisitor):
             # after self.mro has been populated)
             #
             if obj_node in self.mro:
-                for base_node in tail(self.mro[obj_node]):  # the first element is always obj itself
+                for base_node in self.mro[obj_node][1:]:  # the first element is always obj itself
                     namespace = base_node.get_name()
                     value_node = lookup(namespace)
                     if value_node is not None:
