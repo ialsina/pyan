@@ -19,23 +19,31 @@ from .visgraph import VisualGraph
 
 class Writer(ABC):
     def __init__(self, graph: VisualGraph, output=None, tabstop=4):
+        self.graph = graph
+        self.indent_level = 0
+        self.output = self._validate_output(output)
+        self.tabstop = self._validate_tabstop(tabstop)
+        self._outstream = None
+
+    @staticmethod
+    def _validate_output(output):
         if output is None:
-            output = StringIO()
+            return StringIO()
         if not isinstance(output, (str, Path, StringIO)):
             raise TypeError(
                 "output must be of type 'str', 'Path', 'StringIO' or None, "
                 f"but was '{output.__class__.__name__}'."
             )
+        return output
+
+    @staticmethod
+    def _validate_tabstop(tabstop):
         if not isinstance(tabstop, int):
             raise TypeError(
                 "tabstop must be of type 'int', "
                 f"but was '{tabstop.__class__.__name__}'."
             )
-        self.graph = graph
-        self.indent_level = 0
-        self.output = output
-        self.tabstop = " " * tabstop
-        self._outstream = None
+        return " " * tabstop
 
     @abstractmethod
     def start_graph(self):
@@ -138,7 +146,7 @@ class TgfWriter(Writer):
         pass
 
     def start_subgraph(self, graph):
-        # TODO: Check if it really isn't needed
+        # WARN: Check if it really isn't needed
          pass
 
     def write_node(self, node):
@@ -157,7 +165,7 @@ class TgfWriter(Writer):
         pass
 
     def finish_subgraph(self, graph):
-        # TODO: Check if it really isn't needed
+        # WARN: Check if it really isn't needed
          pass
 
     def finish_graph(self):
@@ -224,7 +232,7 @@ class DotAdapter(DotWriter, ABC):
 
     def __init__(self, graph, options, output, tabstop=4):
         super().__init__(graph=graph, options=options, output=StringIO(), tabstop=tabstop)
-        self.converted_output = output
+        self.converted_output = self._validate_output(output)
 
     @staticmethod
     @abstractmethod
