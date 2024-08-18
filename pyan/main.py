@@ -35,7 +35,7 @@ def _get_parser():
     parser.add_argument("--svg", action="store_true", default=False, help="output in SVG Format")
     parser.add_argument("--html", action="store_true", default=False, help="output in HTML Format")
     parser.add_argument("--yed", action="store_true", default=False, help="output in yEd GraphML Format")
-    parser.add_argument("--file", dest="filename", help="write graph to FILE", metavar="FILE", default=None)
+    parser.add_argument("-o", "--output", dest="output", help="write graph to OUTPUT", metavar="OUTPUT", default=None)
     parser.add_argument("--namespace", dest="namespace", help="filter for NAMESPACE", metavar="NAMESPACE", default=None)
     parser.add_argument("--function", dest="function", help="filter for FUNCTION", metavar="FUNCTION", default=None)
     parser.add_argument("-l", "--log", dest="logname", help="write log to LOG", metavar="LOG")
@@ -153,15 +153,15 @@ def _get_graph_options(args):
 def _write_graphs(graph, args):
     writers = []
     if args.dot:
-        DotWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+        DotWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
     if args.html:
-        HTMLWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+        HTMLWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
     if args.svg:
-        SVGWriter(graph, options=["rankdir=" + args.rankdir], output=args.filename).run()
+        SVGWriter(graph, options=["rankdir=" + args.rankdir], output=args.output).run()
     if args.tgf:
-        TgfWriter(graph, output=args.filename).run()
+        TgfWriter(graph, output=args.output).run()
     if args.yed:
-        YedWriter(graph, output=args.filename).run()
+        YedWriter(graph, output=args.output).run()
 
 def main(cli_args=None):
     if cli_args is None:
