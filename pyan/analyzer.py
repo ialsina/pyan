@@ -228,7 +228,11 @@ class CallGraphVisitor(ast.NodeVisitor):
                             and from_node.flavor == Flavor.IMPORTEDITEM
                         ):
                             # use define edges as potential candidates
-                            for candidate_to_node in self.defines_edges[to_node]:  #
+                            # TODO: The change `[to_node]` -> `get(to_node, ())` was done to prevent an error that arised.
+                            # Check whether it is actually a bug, because the `to_node` should have been guaranteed to
+                            # be there, or this is a rightful bugfix.
+                            # TODO: In the same line, check whether it would make sense to switch to defaultdicts.
+                            for candidate_to_node in self.defines_edges.get(to_node, ()):  #
                                 if candidate_to_node.name == node.name:
                                     attribute_import_mapping[node] = candidate_to_node
                                     break
